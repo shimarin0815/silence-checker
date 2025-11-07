@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>無音時間 計算機 – Single HTML</title>
+  <meta name="description" content="ドラッグ＆ドロップした音声(MP3/WAV)の無音時間をWeb Audio APIで合計します" />
+  <style>
+    /* =====================
+       Modern, clean UI
+       ===================== */
+    :root{
+      --bg: #0f1221;
+      --card: rgba(255,255,255,0.06);
+      --card-2: rgba(255,255,255,0.09);
+      --text: #e9ecf1;
+      --muted: #aab3c0;
+      --accent: #7c9cff;
+      --accent-2: #51e9c2;
+      --danger: #ff7b7b;
+      --ok: #7bffb9;
+      --shadow: 0 10px 30px rgba(0,0,0,0.35);
+      --radius: 18px;
+    }
+    html, body{ height:100%; }
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
+      color:var(--text);
+      background: radial-gradient(1200px 600px at 20% -10%, #20306b, transparent 60%),
+                  radial-gradient(900px 500px at 120% 10%, #1b6e5b, transparent 55%),
+                  linear-gradient(180deg, #0a0d1b, #0f1221 40%, #0d0f1b 100%);
+      min-height:100%;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    .container{
+      max-width: 1100px;
+      margin: 40px auto 80px;
+      padding: 0 20px;
+    }
+    header{
+      display:flex; gap:16px; align-items:center; justify-content:space-between;
+      margin-bottom: 22px;
+    }
+    .brand{
+      display:flex; align-items:center; gap:12px;
+    }
+    .logo{
+      width:42px; height:42px; border-radius:12px;
+      background: conic-gradient(from 120deg, #88a5ff, #51e9c2, #88a5ff);
+      box-shadow: 0 6px 24px rgba(124,156,255,0.35);
+      display:grid; place-items:center; color:#0c0f1a; font-weight:900;
+    }
+    .title{
+      font-weight: 800; letter-spacing: .03em; font-size: clamp(20px, 3.2vw, 28px);
+    }
+    .subtitle{
+      color:var(--muted); font-size: 14px; margin-top:4px;
+    }
+
+    .card{
+      background: var(--card);
+      border: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(14px);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .grid{
+      display:grid; grid-template-columns: 1.1fr .9fr; gap:18px; align-items:stretch;
+    }
+    @media (max-width: 900px){
+      .grid{ grid-template-columns: 1fr; }
+    }
+
+    /* Drop zone */
+    .dropzone{
+      display:grid; place-items:center; gap:18px; text-align:center;
+      padding: 28px; min-height: 260px; cursor:pointer;
+      border-radius: var(--radius);
+      border:2px dashed rgba(255,255,255,0.16);
+      transition: .2s ease;
+      position: relative;
+      overflow:hidden;
+      isolation:isolate;
+    }
+    .dropzone:hover{ border-color: rgba(124,156,255,.65); }
+    .dropzone.dragover{ border-color: var(--accent-2); box-shadow: 0 0 0 4px rgba(81,233,194,0.25) inset; }
+    .dz-icon{ font-size:46px; opacity:.9; }
+    .dz-tip{ color:var(--muted); }
+    .file-info{ font-size:14px; color:var(--muted); }
+
+    /* Controls */
+    .panel{ padding: 20px 20px 14px; }
+    .fieldset{ display:grid; gap:14px; }
+    .row{ display:grid; grid-template-columns: 1fr auto; gap:12px; align-items:center; }
+    .label{ font-size: 13px; color: var(--muted); }
+    .value{ font-variant-numeric: tabular-nums; }
+
+    input[type="range"]{ width:100%; }
+    .control{
+      background: var(--card-2); border:1px solid rgba(255,255,255,0.1);
+      border-radius: 14px; padding: 14px; display:grid; gap:8px;
+    }
+    .inline{ display:flex; align-items:center; gap:12px; }
+    .inline input[type="number"]{ width:120px; }
+
+    input[type="number"], select{
+      background:#0f1221; color:var(--text); border:1px solid rgba(255,255,255,0.16);
+      border-radius: 10px; padding:10px 12px; outline:none;
+    }
+    .btn{
+      appearance:none; border:none; padding:12px 16px; border-radius: 12px; cursor:pointer;
+      font-weight:700; color:#0c0f1a; background:linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 8px 20px rgba(88,145,255,.35);
+      transition: transform .06s ease; width:100%;
+    }
+    .btn:active{ transform: translateY(1px); }
+    .btn.secondary{ background:transparent; color:var(--text); border:1px solid rgba(255,255,255,0.18); box-shadow:none; }
+
+    /* Results */
+    .results{ padding: 16px 20px 22px; display:grid; gap:10px; }
+    .stats{ display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; }
+    @media (max-width: 900px){ .stats{ grid-template-columns: 1fr 1fr; } }
+    .stat{
+      background: var(--card-2); border:1px solid rgba(255,255,255,0.09);
+      border-radius: 14px; padding: 14px; display:grid; gap:6px;
+    }
+    .stat .k{ font-size: 13px; color:var(--muted); }
+    .stat .v{ font-size: 22px; font-weight: 800; }
+    .progress-wrap{ background: var(--card-2); border:1px solid rgba(255,255,255,0.09); border-radius: 999px; overflow:hidden; height: 10px; }
+    .progress{ height:100%; width:0%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .15s linear; }
+
+    /* Wave canvas */
+    .wave{
+      height: 90px; width: 100%; border-radius: 12px; background: rgba(255,255,255,0.05);
+      border:1px solid rgba(255,255,255,0.08);
+    }
+
+    footer{ margin-top:30px; color:var(--muted); font-size:13px; text-align:center; }
+    a{ color:#bcd1ff; }
+    .hint{ font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div class="logo">∅</div>
+        <div>
+          <div class="title">無音時間 計算機</div>
+          <div class="subtitle">MP3/WAV をドラッグ＆ドロップ → ブラウザ内で無音(しきい値以下)の合計秒数を計測</div>
+        </div>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- Left: Drop zone & results -->
+      <div class="card">
+        <label class="dropzone" id="dropzone" for="file-input" tabindex="0" role="button" aria-label="音声ファイルをドロップまたは選択">
+          <div>
+            <div class="dz-icon">📥</div>
+            <h2 style="margin:0 0 6px">ここに音声をドロップ</h2>
+            <div class="dz-tip">またはクリックして選択（MP3 / WAV）</div>
+          </div>
+          <input id="file-input" type="file" accept="audio/mpeg, audio/wav" style="display:none" />
+          <div class="file-info" id="file-info"></div>
+        </label>
+
+        <div class="panel">
+          <canvas id="wave" class="wave"></canvas>
+          <div class="results">
+            <div class="stats">
+              <div class="stat"><div class="k">ファイル長</div><div class="v" id="dur">–</div></div>
+              <div class="stat"><div class="k">無音合計</div><div class="v" id="sil">–</div></div>
+              <div class="stat"><div class="k">無音割合</div><div class="v" id="ratio">–</div></div>
+              <div class="stat"><div class="k">最長無音</div><div class="v" id="maxsil">–</div></div>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <div class="progress-wrap"><div class="progress" id="progress"></div></div>
+              <div class="hint" id="status">待機中</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Controls & help -->
+      <div class="card">
+        <div class="panel">
+          <h3 style="margin:0 0 12px">設定</h3>
+          <div class="fieldset">
+            <div class="control">
+              <div class="row"><div class="label">しきい値 (RMS): <span class="value" id="threshVal">0.020</span></div><div class="hint">小さいほど“厳しく静か”</div></div>
+              <input id="threshold" type="range" min="0.001" max="0.1" step="0.001" value="0.020" />
+            </div>
+            <div class="control">
+              <div class="row"><div class="label">フレームサイズ（サンプル数）</div><div class="value" id="frameVal">2048</div></div>
+              <input id="frame" type="range" min="256" max="8192" step="256" value="2048" />
+            </div>
+            <div class="control">
+              <div class="row"><div class="label">最小連続無音時間（秒）</div><div class="value"><input id="minSilentSec" type="number" min="0" step="0.05" value="0.10" /></div></div>
+              <div class="hint">この時間を下回る“つぶつぶ無音”は無視します</div>
+            </div>
+            <div class="inline">
+              <button class="btn" id="recalc">再計算</button>
+              <button class="btn secondary" id="reset">リセット</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3 style="margin:0 0 12px">使い方（超ざっくり）</h3>
+          <ol style="margin:0 0 8px 18px; line-height:1.6">
+            <li>MP3/WAV をドロップ</li>
+            <li>「しきい値」を動かして “静か判定” の厳しさを調整</li>
+            <li>結果を見る → 無音合計(秒)がメイン指標</li>
+          </ol>
+          <div class="hint">※処理はすべてブラウザ内。音声のアップロードは行いません。</div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <div>Made with Web Audio API · ブラウザで安全に解析 ✨</div>
+    </footer>
+  </div>
+
+  <script>
+    // ==============================
+    // 無音時間 計算機（シングルファイル）
+    // 仕組み：
+    // 1) 音声をデコードして波形（サンプル列）を得る
+    // 2) 一定のフレームごとにRMS（平均的な音量）を計算
+    // 3) RMSがしきい値未満のフレームを「無音」とみなし、連続時間を合計
+    // ==============================
+
+    const dz = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file-input');
+    const fileInfo = document.getElementById('file-info');
+    const progressEl = document.getElementById('progress');
+    const statusEl = document.getElementById('status');
+
+    const durEl = document.getElementById('dur');
+    const silEl = document.getElementById('sil');
+    const ratioEl = document.getElementById('ratio');
+    const maxSilEl = document.getElementById('maxsil');
+
+    const thresh = document.getElementById('threshold');
+    const threshVal = document.getElementById('threshVal');
+    const frame = document.getElementById('frame');
+    const frameVal = document.getElementById('frameVal');
+    const minSilentSec = document.getElementById('minSilentSec');
+
+    const recalcBtn = document.getElementById('recalc');
+    const resetBtn = document.getElementById('reset');
+    const waveCanvas = document.getElementById('wave');
+
+    let audioCtx; // Lazily create
+    let audioBuffer = null;
+    let lastResult = null; // keep last metrics for re-calc with new params
+
+    function fmtSec(sec){
+      if(!isFinite(sec)) return '–';
+      return (Math.round(sec * 100) / 100).toFixed(2) + ' s';
+    }
+
+    function setProgress(p, text){
+      progressEl.style.width = (Math.max(0, Math.min(1, p)) * 100).toFixed(1) + '%';
+      if(text) statusEl.textContent = text;
+    }
+
+    function resetUI(){
+      fileInfo.textContent = '';
+      setProgress(0, '待機中');
+      durEl.textContent = '–';
+      silEl.textContent = '–';
+      ratioEl.textContent = '–';
+      maxSilEl.textContent = '–';
+      const g = waveCanvas.getContext('2d');
+      g.clearRect(0,0,waveCanvas.width, waveCanvas.height);
+      lastResult = null;
+      audioBuffer = null;
+    }
+
+    function bindControls(){
+      thresh.addEventListener('input', ()=>{
+        threshVal.textContent = Number(thresh.value).toFixed(3);
+      });
+      frame.addEventListener('input', ()=>{
+        frameVal.textContent = frame.value;
+      });
+      recalcBtn.addEventListener('click', ()=>{
+        if(audioBuffer){ analyze(audioBuffer); }
+      });
+      resetBtn.addEventListener('click', resetUI);
+    }
+
+    function preventDefaults(e){ e.preventDefault(); e.stopPropagation(); }
+    ['dragenter','dragover','dragleave','drop'].forEach(evt=>{
+      dz.addEventListener(evt, preventDefaults, false);
+    });
+    dz.addEventListener('dragover', ()=> dz.classList.add('dragover'));
+    dz.addEventListener('dragleave', ()=> dz.classList.remove('dragover'));
+    dz.addEventListener('drop', (e)=>{
+      dz.classList.remove('dragover');
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if(f) loadFile(f);
+    });
+    dz.addEventListener('click', ()=> fileInput.click());
+    fileInput.addEventListener('change', ()=>{
+      const f = fileInput.files && fileInput.files[0];
+      if(f) loadFile(f);
+    });
+
+    async function loadFile(file){
+      try{
+        if(!/\.(mp3|wav)$/i.test(file.name)){
+          alert('MP3またはWAVファイルを選んでください');
+          return;
+        }
+        resetUI();
+        fileInfo.textContent = `${file.name} (${(file.size/1024/1024).toFixed(2)} MB)`;
+        setProgress(0.05, 'デコード中...');
+
+        const arrayBuf = await file.arrayBuffer();
+        if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        // decodeAudioData returns a Promise in modern browsers
+        audioBuffer = await audioCtx.decodeAudioData(arrayBuf);
+        drawWaveOverview(audioBuffer);
+        durEl.textContent = fmtSec(audioBuffer.duration);
+        setProgress(0.1, '解析準備...');
+        await new Promise(r=> setTimeout(r, 0)); // yield to UI
+        analyze(audioBuffer);
+      }catch(err){
+        console.error(err);
+        alert('読み込みに失敗しました: ' + (err.message || err));
+        resetUI();
+      }
+    }
+
+    function drawWaveOverview(buf){
+      // Simple overview waveform for visual feedback
+      const W = waveCanvas.clientWidth;
+      const H = waveCanvas.clientHeight;
+      waveCanvas.width = W * devicePixelRatio;
+      waveCanvas.height = H * devicePixelRatio;
+      const g = waveCanvas.getContext('2d');
+      g.scale(devicePixelRatio, devicePixelRatio);
+      g.clearRect(0,0,W,H);
+
+      const ch0 = buf.getChannelData(0);
+      const step = Math.ceil(ch0.length / W);
+      const mid = H/2;
+      g.lineWidth = 1;
+      g.strokeStyle = 'rgba(188, 209, 255, 0.9)';
+      g.beginPath();
+      for(let x=0; x<W; x++){
+        const i0 = x*step;
+        let min=1, max=-1;
+        for(let i=i0; i<i0+step && i<ch0.length; i++){
+          const vL = buf.numberOfChannels>1 ? (buf.getChannelData(0)[i] + buf.getChannelData(1)[i]) * 0.5 : ch0[i];
+          if(vL<min) min=vL; if(vL>max) max=vL;
+        }
+        g.moveTo(x, mid + min*mid*0.95);
+        g.lineTo(x, mid + max*mid*0.95);
+      }
+      g.stroke();
+    }
+
+    async function analyze(buf){
+      const threshValNum = parseFloat(thresh.value);
+      const frameSize = parseInt(frame.value, 10);
+      const minSilent = Math.max(0, parseFloat(minSilentSec.value)||0);
+      const hop = frameSize; // non-overlap for speed
+      const chs = buf.numberOfChannels;
+      const len = buf.length;
+      const sr = buf.sampleRate;
+
+      const channels = [];
+      for(let c=0;c<chs;c++) channels[c] = buf.getChannelData(c);
+
+      let silentTotal = 0;
+      let maxSilentGap = 0;
+      let curSilent = 0;
+      let processed = 0;
+
+      setProgress(0.12, '解析中...');
+
+      const totalFrames = Math.ceil(len / hop);
+      const silentSegments = [];
+
+      for(let start=0, fi=0; start<len; start+=hop, fi++){
+        const end = Math.min(start + frameSize, len);
+        let sumSq = 0;
+        const cnt = end - start;
+        for(let i=start; i<end; i++){
+          let v = 0;
+          for(let c=0;c<chs;c++) v += channels[c][i];
+          v /= chs; // mono mix
+          sumSq += v*v;
+        }
+        const rms = Math.sqrt(sumSq / Math.max(1, cnt));
+        const dur = cnt / sr;
+        if(rms <= threshValNum){
+          curSilent += dur;
+        }else{
+          if(curSilent >= minSilent){
+            silentTotal += curSilent;
+            maxSilentGap = Math.max(maxSilentGap, curSilent);
+            silentSegments.push(curSilent);
+          }
+          curSilent = 0;
+        }
+
+        processed = Math.min(1, (start+hop)/len);
+        if(fi % 64 === 0){
+          setProgress(0.12 + 0.84 * processed, `解析中... ${(processed*100).toFixed(0)}%`);
+          await new Promise(r=> setTimeout(r, 0));
+        }
+      }
+      // tail
+      if(curSilent >= minSilent){
+        silentTotal += curSilent;
+        maxSilentGap = Math.max(maxSilentGap, curSilent);
+        silentSegments.push(curSilent);
+      }
+
+      const ratio = buf.duration > 0 ? (silentTotal / buf.duration) : 0;
+      durEl.textContent = fmtSec(buf.duration);
+      silEl.textContent = fmtSec(silentTotal);
+      ratioEl.textContent = (ratio*100).toFixed(1) + ' %';
+      maxSilEl.textContent = fmtSec(maxSilentGap);
+      lastResult = { silentTotal, maxSilentGap, ratio };
+      setProgress(1, '完了');
+    }
+
+    // Init
+    bindControls();
+    threshVal.textContent = Number(thresh.value).toFixed(3);
+    frameVal.textContent = frame.value;
+  </script>
+</body>
+</html>
